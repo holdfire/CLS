@@ -18,6 +18,7 @@ def generate_list_of_images(dir_path, dst_file):
                 print("current count: ", count)
     return 
 
+
 def dfs(path, res):
     # dst_dict = ["bmp", "jpg", "jpeg", "JPG", "JPEG", "png", "PNG"]
     dst_dict = ["avi", "mp4"]

@@ -1,5 +1,5 @@
-# Face Anti-Spoofing with Vision Transformer(FAS-ViT)
-This repository is an implementation of Face Anti-Spoofing model, of which the backbone is based on Transfomer.
+# Face Anti-Spoofing 
+This repository is an implementation of Face Anti-Spoofing model.
 
 ## Environment
 + OS version: Ubuntu 18.04
@@ -30,8 +30,7 @@ The following datasets are stored in Ningbo/k8s machine.
 | Training Date |Dataset| Model | Batch Size | Loss | Optimizer | Learning Rate| Epoch | Weight decay| Note |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | 20210514| train_all_20210423_bbox.txt| deit, pretrained | 256 | bce |Adam-W | lr=5e-4, cosine | 10 | 1e-4| BGR, crop=2.5|
-| 20210517| train_all_20210423_bbox.txt| deit, pretrained | 256 | bce |Adam-W | lr=1e-4, cosine | 5 | 5e-2| BGR, crop=2.5|
-| 20210524| train_all_20210423_bbox.txt| deit, no-pretrained | 256 | bce |Adam-W | lr=2e-4, cosine | 10 | 5e-2| RGB, crop=2.2 |
+
 
 ## Reference:
 #### Code:
