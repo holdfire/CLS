@@ -1,0 +1,12 @@
+ckpt
+checkpoint
+checkpoint*
+logs
+logs*
+
+__pycache__/
+models/__pycache__/
+tools/__pycache__/
+
+.git
+nohup.out

@@ -1,0 +1,13 @@
+numpy
+Cython
+tqdm 
+matplotlib 
+scipy 
+scikit-learn 
+termcolor 
+pandas 
+opencv-python==4.2.0.32
+torch==1.8.1
+torchvision==0.9.1
+vit-pytorch==0.18.3
+timm==0.4.5
