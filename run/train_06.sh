@@ -11,9 +11,9 @@ mkdir -p ${LOG}
 
 python3 -m torch.distributed.launch --nproc_per_node=8 --master_port 11111 train.py \
     --img-root-dir  /home/data4/OULU \
-    --train-file-path  ./data/list_oulu/train_list.txt \
+    --train-file-path  ./data/list_oulu/p1_train_list.txt \
     --evaluate \
-    --val-file-path  ./data/list_oulu/test_list.txt \
+    --val-file-path  ./data/list_oulu/p1_dev_list.txt \
     --arch deit \
     --input-size  224 \
     --crop-scale 1.5 \
