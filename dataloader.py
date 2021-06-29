@@ -13,68 +13,102 @@ from tqdm import tqdm
 import torch
 import torch.utils.data as data
 from torchvision import transforms
+import albumentations as alb
+from albumentations.pytorch.transforms import ToTensorV2
 
 
-def build_train_loader(args):
-    train_trans = transforms.Compose([
-        # ToTensor(): conver type numpy.ndarray into torch.tensor, and normalize each value to [0, 1]
-        transforms.ToTensor(),                     
-        transforms.Resize((args.input_size, args.input_size)),
-        transforms.RandomHorizontalFlip(),
-        # channel order: R, G, B
-        transforms.Normalize(
-            mean=[0.485, 0.456, 0.406],
-            std=[0.229, 0.224, 0.225])
-        # channel order: B, G, R
-    ])
+# train set transform
+train_transform = alb.Compose([
+    alb.Rotate(limit=30),
+    alb.Cutout(1, 25, 25, p=0.1),
+    alb.RandomResizedCrop(256, 256, scale=(0.5, 1.0), p=0.5),
+    alb.Resize(224, 224),
+    alb.HorizontalFlip(),
+    alb.ColorJitter(0.25, 0.25, 0.25, 0.125, p=0.2),
+    alb.ToGray(p=0.1),
+    alb.GaussNoise(p=0.1),
+    alb.GaussianBlur(blur_limit=3, p=0.05),
+    alb.MotionBlur(blur_limit=(10, 20), p=0.2),
+    alb.OneOf([
+        alb.RandomBrightnessContrast(),
+        alb.FancyPCA(),
+        alb.HueSaturationValue(),
+    ], p=0.7),
+    alb.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+    ToTensorV2(),
+])
 
-    train_dataset = TrainDataset(
-        args.train_list,
-        transform = train_trans,
-        input_size = args.input_size,
-        crop_scale = args.crop_scale)
+# test set transform
+test_transform = alb.Compose([
+    alb.Resize(224, 224),
+    alb.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+    ToTensorV2(),
+])
 
-    if args.distributed:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
-    else:
-        train_sampler = None
 
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        shuffle=(train_sampler is None),
+def build_dataloader(args):
+    """
+    Interface to build train or val loader 
+    """
+    if args.mode == "train":
+        dataset = Dataset(
+            args.train_file_path,
+            args.img_root_dir,
+            transform = train_transform,
+            mode = args.mode,
+            balance = True,
+            input_size = args.input_size,
+            crop_scale = args.crop_scale)
+    elif args.mode == "val":
+        dataset = Dataset(
+            args.val_file_path,
+            args.img_root_dir,
+            transform = test_transform,
+            mode = args.mode,
+            balance = False,
+            input_size = args.input_size,
+            crop_scale = args.crop_scale)
+
+    sampler = torch.utils.data.distributed.DistributedSampler(dataset)
+    loader = torch.utils.data.DataLoader(
+        dataset,
+        shuffle=(sampler is None),
         batch_size=args.batch_size,
         num_workers=args.workers,
         pin_memory=True,
-        sampler=train_sampler,
-        drop_last=True)
-    
-    return train_loader, train_sampler
+        sampler=sampler,
+        drop_last=True) 
+    return loader, sampler
 
 
-class TrainDataset(data.Dataset):
-    def __init__(self, ann_file, transform=None, input_size=224, crop_scale=2.5):
+class Dataset(data.Dataset):
+    def __init__(self, ann_file, img_root_dir, transform=None, mode="None",balance=False, input_size=224, crop_scale=1.5):
         self.ann_file = ann_file
+        self.img_root_dir = img_root_dir
+        
         self.transform = transform
+        self.mode = mode
+        self.balance = balance
         self.input_size = input_size
         self.crop_scale = crop_scale
 
         self.image_list = []
         self.label_list = []
         self.bbox_list = []
-        cprint('Build Train Dataset => in dataloader.py: start preparing train dataset from file: %s'%(ann_file), 'green')
-        self.init()
 
-    def init(self):
         with open(self.ann_file, 'r') as f:
-            lines = f.readlines()
-            for line in tqdm(lines):
-                # line format: image_path  label  x_min  y_min  face_x  face_y
+            self.lines = f.readlines()
+
+            # balance class numbers while training
+            if self.balance and self.mode == 'train':
+                self.lines = self.__balance_class__()
+
+            for line in tqdm(self.lines):
                 splits = line.strip().split()
-                # using bbox info to crop face
                 if len(line.strip()) == 0 or len(splits) != 6:
                     continue
                 
-                image_full_name = splits[0]
+                image_full_name = os.path.join(self.img_root_dir, splits[0])
                 label = splits[1]
                 bbox = splits[2:6]
                 bbox = [int(x) for x in bbox]
@@ -83,11 +117,30 @@ class TrainDataset(data.Dataset):
                 self.label_list.append(int(label))
                 self.bbox_list.append(bbox)
         self.n_images = len(self.image_list)
-        cprint('Build Train Dataset => in dataloader.py: finish preparing: there are %d image items'%(self.n_images), 'green')
-        # Channle order: B, G, R
-        # cprint('WARN => in dataloader.py: OpenCV is kept as load engine. The input channels order is kept as B, G, R.', 'yellow')
-        # Channle order: R G, B
-        cprint('WARN => in dataloader.py: The input channels order is changed to R, G, B.', 'yellow')
+        cprint('Build Train Dataset => in dataloader.py: finally get %d images'%(self.n_images), 'green')
+
+
+    def __balance_class__(self, rand_seed=2021):
+        """
+        这个balance最多只能把数目少的类别翻倍，且只针对train set
+        """
+        reals, fakes = [], []
+        for x in self.lines:
+            if int(x.split(" ")[1]) == 0:
+                fakes.append(x)
+            else:
+                reals.append(x)
+        cprint('Build Train Dataset => in dataloader.py: original fakes: %d and real: %d '%(len(fakes), len(reals)), 'green')
+        np.random.seed(rand_seed)
+        if len(fakes) >= len(reals):
+            reals.extend(np.random.permutation(reals)[:len(fakes) - len(reals)])
+        else:
+            fakes.extend(np.random.permutation(fakes)[:len(reals) - len(fakes)])
+
+        self.img_items = reals + fakes
+        np.random.shuffle(self.img_items)
+        return self.img_items
+
 
     def __getitem__(self, index):
         img_path = self.image_list[index]
@@ -100,8 +153,7 @@ class TrainDataset(data.Dataset):
             face = torch.zeros(3, self.input_size, self.input_size)
             return face, int(0)
         
-        cropped_img = cropped_img[: ,:, [2, 1, 0]]
-        face = self.transform(cropped_img)
+        face = self.transform(image=cropped_img)['image']
         return face, label
 
     def __len__(self):
@@ -115,30 +167,23 @@ def get_img_crop(img_path, bbox, scale):
     x_min, y_min, face_x, face_y = bbox
     """
     img = cv2.imread(img_path)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     if img is None:
         print('reading empty image: ', img_path)
         return None
 
-    shape = img.shape
-    h, w = shape[:2]
+    h, w = img.shape[:2]
     x_min, y_min, face_x, face_y = bbox
     x_mid = x_min + face_x / 2.0
     y_mid = y_min + face_y / 2.0
 
-    if x_mid<=0 or y_mid<=0 or face_x<=0 or face_y<=0:
-        return None
+    x_min = max(int(x_mid - face_x * scale / 2.0), 0) 
+    x_max = min(int(x_mid + face_x * scale / 2.0), w)
+    y_min = max(int(y_mid - face_y * scale / 2.0), 0)
+    y_max = min(int(y_mid + face_y * scale / 2.0), h)
 
-    x_min = int( max(x_mid - face_x * scale / 2.0, 0) )
-    x_max = int( min(x_mid + face_x * scale / 2.0, w) )
-    y_min = int( max(y_mid - face_y * scale / 2.0, 0) )
-    y_max = int( min(y_mid + face_y * scale / 2.0, h) )
-
-    if x_min >= x_max or y_min >= y_max:
-        return None
-    
     return img[y_min:y_max, x_min:x_max, :]
-
 
 
 
@@ -146,7 +191,7 @@ if __name__ == "__main__":
 
     # test code
     parser = argparse.ArgumentParser()
-    parser.add_argument('--train_list', default='/home/projects/list/train_list/train_all_20210423_bbox.txt',help='train list demo')
+    parser.add_argument('--train_list', default='/home/data4/OULU/list/train_list.txt',help='train list demo')
     parser.add_argument('--input_size', default=224, type=int, help='model input size')
     parser.add_argument('--crop_scale', default=2.5, type=float,help='crop scale to crop a face from raw image')
     parser.add_argument('--batch-size', default=16, type=int, metavar='N', help='mini-batch size (default: 256)')
@@ -154,7 +199,7 @@ if __name__ == "__main__":
     parser.add_argument('--distributed', action='store_true',help='Use multi-processing distributed training to launch')
     args = parser.parse_args()
 
-    loader = build_train_loader(args)
+    loader, sampler= build_dataloader(args)
     for i, (face, label) in enumerate(loader):
         print(face.shape)
         print(type(face))

@@ -4,7 +4,6 @@ Author: Liu Xing
 Date: 2021-05-13
 Reference: https://github.com/pytorch/examples/blob/master/imagenet/main.py
 """
-
 import os
 import time
 import pprint
@@ -12,32 +11,45 @@ import builtins
 from termcolor import cprint
 import warnings
 import tensorboard
-warnings.filterwarnings("ignore")
+from loguru import logger
+from timm.utils import CheckpointSaver
 
 import torch
 import torchvision
 import torch.nn as nn
 import torch.nn.parallel
-import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torch.backends.cudnn as cudnn
 import torch.utils.data.distributed
 import torch.distributed as dist
 import torch.multiprocessing as mp
-from torch.utils.tensorboard import SummaryWriter
 
 from models import build_model
-from dataloader import build_train_loader
+from dataloader import build_dataloader
 from loss import build_loss
 from lr_schedule import build_lr_schedule
 from optimizer import build_optimizer
 
 import parser
-from tools.utils import AverageMeter, ProgressMeter, accuracy, save_checkpoint
+from tools.utils import AverageMeter, ProgressMeter, accuracy, cal_metrics, find_best_threshold
 
 
 def main(args):
+
     args = parser.parse_args()
+    # add logs
+    if not os.path.exists(args.log_save_dir):
+        os.makedirs(args.log_save_dir)
+    train_log = os.path.join(args.log_save_dir, 'train_log')
+    logger.add(train_log)
+    args.logger = logger
+
+    if args.gpu != 0:
+        def print_pass(*args):
+            pass
+        builtins.print = print_pass
+
+    # set random seed
     if args.seed is not None:
         random.seed(args.seed)
         torch.manual_seed(args.seed)
@@ -47,188 +59,53 @@ def main(args):
                       'which can slow down your training considerably! '
                       'You may see unexpected behavior when restarting '
                       'from checkpoints.')
+    print('running on GPU {}'.format(args.local_rank))
 
-    if args.gpu is not None:
-        warnings.warn('You have chosen a specific GPU. This will completely '
-                      'disable data parallelism.')
+    # Distributed Date Parallel
+    dist.init_process_group(backend='nccl', init_method="env://")
+    torch.cuda.set_device(args.local_rank)
+    device = torch.device("cuda", args.local_rank)
 
-    if args.dist_url == "env://" and args.world_size == -1:
-        args.world_size = int(os.environ["WORLD_SIZE"])
-
-    args.distributed = args.world_size > 1 or args.multiprocessing_distributed
-
-    ngpus_per_node = torch.cuda.device_count()
-    if args.multiprocessing_distributed:
-        # Since we have ngpus_per_node processes per node, the total world_size
-        # needs to be adjusted accordingly
-        args.world_size = ngpus_per_node * args.world_size
-        # Use torch.multiprocessing.spawn to launch distributed processes: the
-        # main_worker process function
-        mp.spawn(main_worker, nprocs=ngpus_per_node, args=(ngpus_per_node, args))
-    else:
-        # Simply call main_worker function
-        main_worker(args.gpu, ngpus_per_node, args)
-
-
-def main_worker(gpu, ngpus_per_node, args):
-    args.gpu = gpu
-
-    # suppress printing if not master
-    if args.multiprocessing_distributed and args.gpu != 0:
-        def print_pass(*args):
-            pass
-        builtins.print = print_pass
-
-    if args.gpu is not None:
-        cprint("WARN => in train.py: Use GPU: {} for training".format(args.gpu), 'yellow')
-
-    if args.distributed:
-        if args.dist_url == "env://" and args.rank == -1:
-            args.rank = int(os.environ["RANK"])
-        if args.multiprocessing_distributed:
-            # For multiprocessing distributed training, rank needs to be the
-            # global rank among all the processes
-            args.rank = args.rank * ngpus_per_node + gpu
-        dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
-                                world_size=args.world_size, rank=args.rank)
+    # create dataloader
+    args.mode = "train"
+    train_loader, train_sampler = build_dataloader(args)
+    args.n_iter_per_epoch = len(train_loader)
+    if args.evaluate:
+        args.mode = "val"
+        val_loader, val_sampler = build_dataloader(args)
     
-    # create tensorboard
-    writer = SummaryWriter(log_dir = args.log_save_dir, max_queue=50, flush_secs=120)
 
     # create model
-    model = build_model.build_model(args)
+    model = build_model.build_model(args).to(device)
     args.model = model
-    cprint(" Model => ")
-    print(model)
-
-    if not torch.cuda.is_available():
-        cprint('WARN => in train.py: using CPU, this will be slow', "red")
-    elif args.distributed:
-        # For multiprocessing distributed, DistributedDataParallel constructor
-        # should always set the single device scope, otherwise,
-        # DistributedDataParallel will use all available devices.
-        if args.gpu is not None:
-            torch.cuda.set_device(args.gpu)
-            model.cuda(args.gpu)
-            # When using a single GPU per process and per
-            # DistributedDataParallel, we need to divide the batch size
-            # ourselves based on the total number of GPUs we have
-            args.batch_size = int(args.batch_size / ngpus_per_node)
-            args.workers = int((args.workers + ngpus_per_node - 1) / ngpus_per_node)
-            model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
-        else:
-            model.cuda()
-            # DistributedDataParallel will divide and allocate batch_size to all
-            # available GPUs if device_ids are not set
-            model = torch.nn.parallel.DistributedDataParallel(model, find_unused_parameters=True)
-    elif args.gpu is not None:
-        torch.cuda.set_device(args.gpu)
-        model = model.cuda(args.gpu)
-    else:
-        # DataParallel will divide and allocate batch_size to all available GPUs
-        if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
-            model.features = torch.nn.DataParallel(model.features)
-            model.cuda()
-        else:
-            model = torch.nn.DataParallel(model).cuda()
-
-
-    # build dataloader
-    train_loader, train_sampler = build_train_loader(args)
-
-
-    # training on ImageNet: Data loading code
-    # args.data = "/home/data4/ILSVRC2012"
-    # print("training on imageNet")
-    # traindir = os.path.join(args.data, 'train')
-    # valdir = os.path.join(args.data, 'val')
-    # normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-    #                                  std=[0.229, 0.224, 0.225])
-    # train_dataset = datasets.ImageFolder(
-    #     traindir,
-    #     transforms.Compose([
-    #         transforms.RandomResizedCrop(224),
-    #         transforms.RandomHorizontalFlip(),
-    #         transforms.ToTensor(),
-    #         normalize,
-    #     ]))
-    # if args.distributed:
-    #     train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
-    # else:
-    #     train_sampler = None
-    # train_loader = torch.utils.data.DataLoader(
-    #     train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
-    #     num_workers=args.workers, pin_memory=True, sampler=train_sampler)
-    
-
-    args.n_iter_per_epoch = len(train_loader)
-
-    # build loss function (criterion), optimizer and learning rate schedule
+    model = nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank], find_unused_parameters=True)
     criterion = build_loss(args)
     optimizer = build_optimizer(args)
     scheduler = build_lr_schedule(args, optimizer)
 
-    # optionally resume from a checkpoint
-    if args.resume:
-        if os.path.isfile(args.resume):
-            cprint("WARN => loading checkpoint: '{}'".format(args.resume), 'yellow')
-            if args.gpu is None:
-                checkpoint = torch.load(args.resume)
-            else:
-                # Map model to be loaded to specified single gpu.
-                loc = 'cuda:{}'.format(args.gpu)
-                checkpoint = torch.load(args.resume, map_location=loc)
-
-            args.start_epoch = checkpoint['epoch']
-            model.load_state_dict(checkpoint['state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer'])
-            scheduler.load_state_dict(checkpoint['scheduler'])
-            cprint("WARN => loaded checkpoint: '{}' (epoch {})".format(args.resume, checkpoint['epoch']), 'yellow')
-        else:
-            cprint("WARN => no checkpoint found at: '{}'".format(args.resume), 'red')
-
-    cudnn.benchmark = True
-
-    for epoch in range(args.start_epoch, args.epochs):
-        if args.distributed:
-            train_sampler.set_epoch(epoch)
-        
-        # train for one epoch
-        train(train_loader, model, criterion, optimizer, epoch, args, scheduler, writer)
-
-        if not args.multiprocessing_distributed or (args.multiprocessing_distributed
-                and args.rank % ngpus_per_node == 0):
-            save_checkpoint({
-                'epoch': epoch + 1,
-                # 'arch': args.arch,
-                'state_dict': model.state_dict(),
-                'optimizer' : optimizer.state_dict(),
-                'scheduler': scheduler.state_dict(),
-            }, os.path.join(args.pth_save_dir, "epoch_" + str(epoch+1) + ".pth.tar"))
-
-    writer.close()
+    # saving checkpoint by package timm        
+    saver = None
+    if args.local_rank == 0:
+        saver = CheckpointSaver(model, optimizer, args=args, decreasing=True, checkpoint_dir=args.pth_save_dir, recovery_dir=args.pth_save_dir, max_history=args.epochs+1)
+    
+    total_epoch = len(train_loader) // args.world_size
+    for epoch in range(1, args.epochs + 1):
+        train_sampler.set_epoch(epoch)
+        train(args, train_loader, model, criterion, optimizer, scheduler, epoch, total_epoch, logger)
+        if args.evaluate:
+            validate(args, val_loader, model, criterion, scheduler, saver, epoch, total_epoch, logger)
 
 
-def train(train_loader, model, criterion, optimizer, epoch, args, scheduler, writer):
+
+def train(args, train_loader, model, criterion, optimizer, scheduler, epoch, total_epoch, logger):
     losses = AverageMeter('Loss', ':.4e')
     top1 = AverageMeter('Acc@1', ':6.2f')
     learning_rate = AverageMeter('LR:', ':.4e')
-
-    progress = ProgressMeter(
-        len(train_loader),
-        [losses, top1, learning_rate],
-        prefix="Epoch: [{}]".format(epoch))
-
-    # switch to train mode
     model.train()
 
-    end = time.time()
     for i, (images, target) in enumerate(train_loader):
-
-        if args.gpu is not None:
-            images = images.cuda(args.gpu, non_blocking=True)
-        if torch.cuda.is_available():
-            target = target.cuda(args.gpu, non_blocking=True)
+        images = images.cuda(non_blocking=True)
+        target = target.cuda(non_blocking=True)
 
         # compute output
         embedding, output = model(images)
@@ -248,34 +125,60 @@ def train(train_loader, model, criterion, optimizer, epoch, args, scheduler, wri
         scheduler.step_update(iters)
         learning_rate.update(scheduler.get_update_values(iters)[0])
 
-        # save checkpoint by iteration
-        assert args.pth_save_iter <= len(train_loader), \
-               'please make args.pth_save_iter smalller than total iterations'
-        
-        if args.pth_save_iter != 0 and i % args.pth_save_iter == 0 and i != 0 :
-            fn = os.path.join(
-                    args.pth_save_dir, 'iter_{}.pth.tar'.format(
-                    str(iters).zfill(12)))
-            save_checkpoint({
-                # 'epoch': epoch + 1,
-                # 'arch': args.arch,
-                'state_dict': model.state_dict(),
-                # 'optimizer' : optimizer.state_dict(),
-                # 'scheduler': scheduler.state_dict(),
-            }, filename=fn)
-            cprint('Saving by iteration => save pth for epoch {} at {}'.format(epoch + 1, fn))
+        # new print strategy
+        if args.local_rank == 0:
+            if i % args.print_freq == 0:
+                info = 'epoch {} step {} LR: {} train_acc: {:.5f}({:.5f}) train_loss: {:.5f}({:.5f})'.format(
+                    epoch, i, learning_rate.val, top1.val, top1.avg, losses.val, losses.avg)
+                logger.info(info)
 
 
-        # display frequency and tensorboard
-        writer.add_scalars('training',
-                          {'loss': losses.val, 
-                           'top1': top1.val,
-                           'loss_avg': losses.avg, 
-                           'top1_avg': top1.avg},
-                           global_step = iters,)
+def validate(args, val_loader, model, criterion, scheduler, saver, epoch, total_epoch, logger):
+    loss_m = AverageMeter()
+    model.eval()
 
-        if i % args.print_freq == 0:
-            progress.display(i)
+    y_preds, y_targets = [], []   
+    for _, datas in enumerate(tqdm(val_loader)):
+        with torch.no_grad():
+            images = datas[0].cuda(non_blocking=True)
+            targets = datas[1].cuda()
+            bs = targets.size(0)
+
+            output = model(images)
+
+            loss = criterion(output, targets)
+            loss_m.update(reduce_tensor(loss.data).item(), bs)
+
+            probs = torch.softmax(output, dim=1)[:,1]
+            y_preds.extend(probs)
+            y_targets.extend(targets)
+
+    y_preds, y_targets = torch.stack(y_preds), torch.stack(y_targets)
+    world_size = dist.get_world_size()
+
+    gather_y_preds = [torch.ones_like(y_preds) for _ in range(world_size)]
+    dist.all_gather(gather_y_preds, y_preds)
+    gather_y_preds = torch.cat(gather_y_preds).cpu().tolist()
+
+    gather_y_targets = [torch.ones_like(y_targets) for _ in range(world_size)]
+    dist.all_gather(gather_y_targets, y_targets)
+    gather_y_targets = torch.cat(gather_y_targets).cpu().tolist()
+
+    metrics = cal_metrics(gather_y_targets, gather_y_preds, threshold='auto')
+    scheduler.step(metrics.ACER)
+
+    if args.local_rank == 0:
+        best_metric, best_epoch = saver.save_checkpoint(epoch, metric=metrics.ACER)
+
+        for k, v in metrics.items():
+            args.logger.info('val_{}: {:.4f}'.format(k, v * 100))
+
+        cur_lr = [group['lr'] for group in scheduler.optimizer.param_groups][0]
+        info = 'VAL_INFO EPOCH {}:\n\tACER: {:.4f} APCER: {:.4f} BPCER: {:.4f} AUC: {:.4f} ACC: {:.4f} Loss: {:.4f} lr: {:.5f}'.format(
+            epoch, metrics.ACER, metrics.APCER, metrics.BPCER, metrics.AUC, metrics.ACC, loss_m.avg, cur_lr
+        )
+        args.logger.info(info)
+        args.logger.info('best_epoch: {} best_val_ACER: {:.4f}'.format(best_epoch, best_metric * 100))
 
 
 

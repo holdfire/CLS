@@ -1,0 +1,10 @@
+deb http://mirrors.aliyun.com/ubuntu/ bionic main multiverse restricted universe
+deb http://mirrors.aliyun.com/ubuntu/ bionic-backports main multiverse restricted universe
+deb http://mirrors.aliyun.com/ubuntu/ bionic-proposed main multiverse restricted universe
+deb http://mirrors.aliyun.com/ubuntu/ bionic-security main multiverse restricted universe
+deb http://mirrors.aliyun.com/ubuntu/ bionic-updates main multiverse restricted universe
+deb-src http://mirrors.aliyun.com/ubuntu/ bionic main multiverse restricted universe
+deb-src http://mirrors.aliyun.com/ubuntu/ bionic-backports main multiverse restricted universe
+deb-src http://mirrors.aliyun.com/ubuntu/ bionic-proposed main multiverse restricted universe
+deb-src http://mirrors.aliyun.com/ubuntu/ bionic-security main multiverse restricted universe
+deb-src http://mirrors.aliyun.com/ubuntu/ bionic-updates main multiverse restricted universe

@@ -37,16 +37,18 @@ def build_lr_schedule(args, optimizer):
             # warmup_t=warmup_steps,
             t_in_epochs=False,
         )
-    # TO DO
+    elif args.lr_schedule == 'reducePlateau':
+        lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='min', factor=0.2, patience=10, verbose=True)
+    # to do
     elif args.lr_schedule == 'step':
         lr_scheduler = StepLRScheduler(
             optimizer,
             decay_t=decay_steps,
             decay_rate=args.TRAIN.LR_SCHEDULER.DECAY_RATE,
-            # warmup_lr_init=args.TRAIN.WARMUP_LR,
-            # warmup_t=warmup_steps,
             t_in_epochs=False,
         )
+
     else:
         raise Exception("lr_schedule is not defined.")
     

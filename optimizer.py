@@ -6,13 +6,15 @@ def build_optimizer(args):
         optimizer = torch.optim.SGD(args.model.parameters(), args.lr,
                                     momentum=args.momentum,
                                     weight_decay=args.weight_decay)
+    elif args.optimizer_type == "adam":
+        optimizer = torch.optim.Adam(args.model.parameters(), args.lr, 
+                                    weight_decay=args.weight_decay)
     elif args.optimizer_type == "adamw":
         optimizer = torch.optim.AdamW(args.model.parameters(), args.lr,
                                     betas=(0.9, 0.999), eps=1e-08, 
                                     weight_decay=args.weight_decay)
     else:
         raise Exception("optimizer type is not defined.")
-    
     return optimizer
 
 

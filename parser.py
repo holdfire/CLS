@@ -11,11 +11,11 @@ def parse_args():
     # basic args
     parser.add_argument('-a', '--arch', metavar='ARCH', default='vit',
                         help='model architecture')
-    parser.add_argument('--cfg', '--config', type=str, required=True, metavar="FILE",
-                        help='path to backbone network config file')
-    parser.add_argument('--train-list', default=None, type=str,
+    parser.add_argument('--img-root-dir', default="/home/data4/OULU/Train_images/", type=str,
+                        help='The directory saving dataset')
+    parser.add_argument('--train-file-path', default=None, type=str,
                         help='The dataset list path for training')
-    parser.add_argument('--valid-list', default=None, type=str,
+    parser.add_argument('--val-file-path', default=None, type=str,
                         help='The dataset list path for validation')
     parser.add_argument('--evaluate', dest='evaluate', action='store_true',
                         help='evaluate model on validation set')
@@ -66,9 +66,9 @@ def parse_args():
     # distributed training
     parser.add_argument('-j', '--workers', default=16, type=int, metavar='N',
                         help='number of data loading workers (default: 16)')
-    parser.add_argument('--world-size', default=-1, type=int,
+    parser.add_argument('--world-size', default=2, type=int,
                         help='number of nodes for distributed training')
-    parser.add_argument('--rank', default=-1, type=int,
+    parser.add_argument('--local_rank', default=0, type=int,
                         help='node rank for distributed training')
     parser.add_argument('--dist-url', default='tcp://224.66.41.62:23456', type=str,
                         help='url used to set up distributed training')
