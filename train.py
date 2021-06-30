@@ -12,6 +12,7 @@ from termcolor import cprint
 import warnings
 import tensorboard
 from loguru import logger
+import tqdm
 from timm.utils import CheckpointSaver
 
 import torch
@@ -92,7 +93,7 @@ def main(args):
     for epoch in range(1, args.epochs + 1):
         train_sampler.set_epoch(epoch)
         train(args, train_loader, model, criterion, optimizer, scheduler, epoch, total_epoch, logger)
-        if args.evaluate:
+        if args.evaluate and epoch % args.eval_interval_time == 0:
             validate(args, val_loader, model, criterion, scheduler, saver, epoch, total_epoch, logger)
 
 
@@ -134,20 +135,20 @@ def train(args, train_loader, model, criterion, optimizer, scheduler, epoch, tot
 
 
 def validate(args, val_loader, model, criterion, scheduler, saver, epoch, total_epoch, logger):
-    loss_m = AverageMeter()
+    loss_m = AverageMeter('Acc@1', ':6.2f')
     model.eval()
 
     y_preds, y_targets = [], []   
-    for _, datas in enumerate(tqdm(val_loader)):
+    for _, datas in enumerate(val_loader):
         with torch.no_grad():
             images = datas[0].cuda(non_blocking=True)
-            targets = datas[1].cuda()
+            targets = datas[1].cuda(non_blocking=True)
             bs = targets.size(0)
 
-            output = model(images)
+            embedding, output = model(images)
 
             loss = criterion(output, targets)
-            loss_m.update(reduce_tensor(loss.data).item(), bs)
+            loss_m.update(loss.item(), bs)
 
             probs = torch.softmax(output, dim=1)[:,1]
             y_preds.extend(probs)
@@ -168,7 +169,21 @@ def validate(args, val_loader, model, criterion, scheduler, saver, epoch, total_
     scheduler.step(metrics.ACER)
 
     if args.local_rank == 0:
-        best_metric, best_epoch = saver.save_checkpoint(epoch, metric=metrics.ACER)
+        # revised saving strategy
+        save_state = {
+            'epoch': epoch,
+            'arch': type(model).__name__.lower(),
+            'state_dict': model.state_dict(),
+            'optimizer': saver.optimizer.state_dict(),
+            'version': 2,  # version < 2 increments epoch before save
+        }
+        filename = '-'.join([saver.save_prefix, str(epoch)]) + saver.extension
+        save_path = os.path.join(saver.checkpoint_dir, filename)
+        torch.save(save_state, save_path)
+        # print("here")
+
+        # old saving strategy
+        # best_metric, best_epoch = saver.save_checkpoint(epoch)
 
         for k, v in metrics.items():
             args.logger.info('val_{}: {:.4f}'.format(k, v * 100))
@@ -178,7 +193,7 @@ def validate(args, val_loader, model, criterion, scheduler, saver, epoch, total_
             epoch, metrics.ACER, metrics.APCER, metrics.BPCER, metrics.AUC, metrics.ACC, loss_m.avg, cur_lr
         )
         args.logger.info(info)
-        args.logger.info('best_epoch: {} best_val_ACER: {:.4f}'.format(best_epoch, best_metric * 100))
+        # args.logger.info('best_epoch: {} best_val_ACER: {:.4f}'.format(best_epoch, best_metric * 100))
 
 
 

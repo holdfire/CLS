@@ -11,7 +11,7 @@ def parse_args():
     # basic args
     parser.add_argument('-a', '--arch', metavar='ARCH', default='vit',
                         help='model architecture')
-    parser.add_argument('--img-root-dir', default="/home/data4/OULU/Train_images/", type=str,
+    parser.add_argument('--img-root-dir', default="/home/data4/OULU/", type=str,
                         help='The directory saving dataset')
     parser.add_argument('--train-file-path', default=None, type=str,
                         help='The dataset list path for training')
@@ -19,7 +19,7 @@ def parse_args():
                         help='The dataset list path for validation')
     parser.add_argument('--evaluate', dest='evaluate', action='store_true',
                         help='evaluate model on validation set')
-    parser.add_argument('--eval-interval-time', default=0, type=int,
+    parser.add_argument('--eval-interval-time', default=1, type=int,
                         help='The eval interval time')
     
     # hyper parameters

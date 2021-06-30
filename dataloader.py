@@ -59,7 +59,7 @@ def build_dataloader(args):
             balance = True,
             input_size = args.input_size,
             crop_scale = args.crop_scale)
-    elif args.mode == "val":
+    elif args.mode in ["val", "test"]:
         dataset = Dataset(
             args.val_file_path,
             args.img_root_dir,
@@ -69,10 +69,10 @@ def build_dataloader(args):
             input_size = args.input_size,
             crop_scale = args.crop_scale)
 
+
     sampler = torch.utils.data.distributed.DistributedSampler(dataset)
     loader = torch.utils.data.DataLoader(
         dataset,
-        shuffle=(sampler is None),
         batch_size=args.batch_size,
         num_workers=args.workers,
         pin_memory=True,
@@ -95,7 +95,6 @@ class Dataset(data.Dataset):
         self.image_list = []
         self.label_list = []
         self.bbox_list = []
-
         with open(self.ann_file, 'r') as f:
             self.lines = f.readlines()
 
