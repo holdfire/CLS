@@ -1,5 +1,5 @@
-# Face Anti-Spoofing 
-This repository is an implementation of Face Anti-Spoofing model.
+# Classification
+This repository is an implementation of basic image classification framework.
 
 ## Environment
 + OS version: Ubuntu 18.04
@@ -9,28 +9,8 @@ This repository is an implementation of Face Anti-Spoofing model.
 + Python version: 3.6.9
 + Python packages installation:   
   `pip3 install -i https://mirrors.aliyun.com/pypi/simple  -r requirements.txt`
-  
-
-## Train
-#### Dataset
-The following datasets are stored in Ningbo/k8s machine.   
-
-|Dataset| Image Path | Total Numbers | Notes |
-| :---: | :---: | :---: | :---: |
-|ImageNet | /home/data4/ILSVRC2012 | ~1.18 M | for test|
-| 防伪训练集0423 | list/train_list/train_all_20210423_bbox.txt| ~907 W | 业务数据 |
-| 防伪测试集 | /list_72/cbsr_mas_v6_hifi-mask-test_bbox.txt | ~18 W| 业务数据 |
-
-
-#### Experiments
-+ **Backbone**: Vit, DeiT, Deep Vit, CaiT, Token-to-Token ViT, Cross ViT, PiT, LeViT, CvT, Twins SVT, Masked Patch Prediction, Dino, Accessing Attention(visualize attention weights), Swin-Transformer
-+ **Loss**: BCE, Center Loss
-+ **Optimizer**: Adam-W, SGD
-
-| Training Date |Dataset| Model | Batch Size | Loss | Optimizer | Learning Rate| Epoch | Weight decay| Note |
-| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| 20210514| train_all_20210423_bbox.txt| deit, pretrained | 256 | bce |Adam-W | lr=5e-4, cosine | 10 | 1e-4| BGR, crop=2.5|
-
+ 
+ 
 
 ## Reference:
 #### Code:
