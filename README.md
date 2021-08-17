@@ -32,7 +32,7 @@ This repository is an implementation of basic image classification framework.
 + Swin: http://arxiv.org/abs/2103.14030
 + CaiT: https://arxiv.org/abs/2103.17239
 
-##3 Change log:
+### Changing log:
 **20210524**: change the order of input image channel from BGR to RGB, to better adapt to pretrained model in ImageNet.
 + dataloader.py：修改了图片加载顺序BGR->RGB
 + test.py：修改了图片加载顺序BGR->RGB
