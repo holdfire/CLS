@@ -14,7 +14,7 @@ This repository is an implementation of basic image classification framework.
 `sh run/train_example.sh`
 
 ### Test
-‘sh run/test.sh’
+`sh run/test.sh`
  
 
 ### Reference:
