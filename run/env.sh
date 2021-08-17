@@ -6,7 +6,7 @@ cp ./run/sources.list ./
 
 # necessary packages
 apt-get update
-apt-get install -y python3-pip vim git openssh-server lrzsz
+apt-get install -y python3-pip vim git openssh-server lrzsz zip
 apt-get install -y libsm6 libxrender1 libxext6 libglib2.0-dev
 
 # Support Chinese
@@ -16,15 +16,15 @@ export LC_ALL="en_US.UTF-8"
 localedef -i en_US -f UTF-8 en_US.UTF-8
 
 # git configuration
-git config --global user.email "liuxing.a@mininglamp.com"
-git config --global user.name "liuxing.a" 
+git config --global user.email "1028377876@qq.com"
+git config --global user.name "liuxing" 
 
 # start ssh service
 cd
 mkdir .ssh
 cd .ssh
-cp /home/projects/env_settings/authorized_keys ./
+cp ./authorized_keys ./
 service ssh start 
 
 # python packages
-pip3 install -r /home/projects/face_liveness/FAS/requirements.txt
+pip3 install -r ./equirements.txt
