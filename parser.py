@@ -9,7 +9,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     # basic args
-    parser.add_argument('-a', '--arch', metavar='ARCH', default='vit',
+    parser.add_argument('-a', '--arch', metavar='ARCH', default='',
                         help='model architecture')
     parser.add_argument('--img-root-dir', default="/home/data4/OULU/", type=str,
                         help='The directory saving dataset')

@@ -11,27 +11,41 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from scipy.special import softmax
+import albumentations as alb
+from albumentations.pytorch.transforms import ToTensorV2
 
 from models import build_model
 from tools.oulu_utils import accuracy, performances
 
+parse = argparse.ArgumentParser()
+parse.add_argument('-a', '--arch', metavar='ARCH', default='resnet50', help='model architecture')
+parse.add_argument('--input-size', default=224, type=int, help='model input size')
+parse.add_argument('--crop-scale', default=1.3, type=float, help='scale to crop a face from raw image')
+parse.add_argument('--ckpt_path', dest = 'ckpt_path', type = str, default='./ckpt/checkpoint_20210706/checkpoint-40.pth.tar')
+parse.add_argument('-b', '--batch-size', default=1, type=int, metavar='N')
+parse.add_argument('-j', '--workers', default=16, type=int, metavar='N', help='number of data loading workers (default: 16)')
+parse.add_argument('--img-root-dir', default="/home/data4/OULU/", type=str, help='The directory saving dataset')
+parse.add_argument('--val-file-path',  type = str, default="./data/list_oulu/p1_dev_list.txt")
+parse.add_argument('--test-file-path', type = str, default="./data/list_oulu/p1_test_list.txt")
 
-def main():
-    parse = argparse.ArgumentParser()
-    parse.add_argument('-a', '--arch', metavar='ARCH', default='deit', help='model architecture')
-    parse.add_argument('--input-size', default=224, type=int, help='model input size')
-    parse.add_argument('--crop-scale', default=1.5, type=float, help='scale to crop a face from raw image')
-    parse.add_argument('--ckpt_path', dest = 'ckpt_path', type = str, default='./ckpt/checkpoint_20210629/checkpoint-100.pth.tar')
-    parse.add_argument('-b', '--batch-size', default=1, type=int, metavar='N')
-    parse.add_argument('-j', '--workers', default=16, type=int, metavar='N', help='number of data loading workers (default: 16)')
-    parse.add_argument('--img-root-dir', default="/home/data4/OULU/", type=str, help='The directory saving dataset')
-    parse.add_argument('--val-file-path',  type = str, default="./data/list_oulu/p1_dev_list.txt")
-    parse.add_argument('--test-file-path', type = str, default="./data/list_oulu/p1_test_list.txt")
-    parse.add_argument('--result-val-path', type = str, default="./data/result_oulu/p1_dev_result.txt")
-    parse.add_argument('--result-test-path', type = str, default="./data/result_oulu/p1_test_result.txt")
-    parse.add_argument('--out', dest = 'out', type = str, default="./data/result_oulu/p1_result.txt")
-    args = parse.parse_args()
+parse.add_argument('--result-dir', type = str, default="./result/result_oulu/")
+parse.add_argument('--result-val-path', type = str, default="p1_dev_result.txt")
+parse.add_argument('--result-test-path', type = str, default="p1_test_result.txt")
+parse.add_argument('--out', dest = 'out', type = str, default="p1_result.txt")
+args = parse.parse_args()
 
+# reset file path
+date = args.ckpt_path.split("/")[-2].split("_")[-1]
+epoch = int(args.ckpt_path.split("/")[-1].split(".")[0].split("-")[-1])
+args.result_dir = os.path.join(args.result_dir, date)
+if not os.path.exists(args.result_dir ):
+    os.makedirs(args.result_dir)
+args.result_val_path = os.path.join(args.result_dir, "epoch_" + str(epoch) + "_" + args.result_val_path)
+args.result_test_path = os.path.join(args.result_dir, "epoch_" + str(epoch) + "_" + args.result_test_path)
+args.out = os.path.join(args.result_dir, args.out)
+
+
+def main(args):
     # create model
     args.pretrained = False
     model = build_model.build_model(args).cuda()
@@ -44,17 +58,26 @@ def main():
         args.file_path = args.val_file_path
         val_loader, val_sampler = build_dataloader(args)
         score_list = []
-        
+        sum_score = 0
+        sum_label = 0
+
         for i, datas in enumerate(val_loader):
             images = datas[0].cuda(non_blocking=True)
             spoof_label = datas[1].cuda(non_blocking=True)
             bs = spoof_label.size(0)
             embedding, output = model(images)
             output = F.softmax(output, dim=1)
-            output = output.squeeze().cpu().numpy()             
-            score_list.append('{} {}\n'.format(output[-1], spoof_label[0]))
+            output = output.squeeze().cpu().numpy() 
+            if i > 0 and i % 10 == 0: 
+                score_list.append('{} {}\n'.format(sum_score/10, sum_label/10))
+                sum_score = output[-1]
+                sum_label = spoof_label[0]
+            else:
+                sum_score += output[-1]
+                sum_label += spoof_label[0] 
             if i % 100 == 0:
-                print(i)
+                print("val count: {} / {}".format(str(i), str(len(val_loader))))
+        score_list.append('{} {}\n'.format(sum_score/10, sum_label/10))
         with open(args.result_val_path, 'w') as file:
             file.writelines(score_list) 
 
@@ -62,7 +85,9 @@ def main():
         args.file_path = args.test_file_path
         test_loader, test_sampler = build_dataloader(args)
         score_list = []
-        
+        sum_score = 0
+        sum_label = 0
+
         for i, datas in enumerate(test_loader):
             images = datas[0].cuda(non_blocking=True)
             spoof_label = datas[1].cuda(non_blocking=True)
@@ -70,11 +95,34 @@ def main():
             embedding, output = model(images)
             output = F.softmax(output, dim=1)
             output = output.squeeze().cpu().numpy()             
-            score_list.append('{} {}\n'.format(output[-1], spoof_label[0]))
+            if i > 0 and i % 10 == 0:             
+                score_list.append('{} {}\n'.format(sum_score/10, sum_label/10))
+                sum_score = output[-1]
+                sum_label = spoof_label[0]
+            else:
+                sum_score += output[-1]
+                sum_label += spoof_label[0]
             if i % 100 == 0:
-                print(i)
+                print("test count: {} / {}".format(str(i), str(len(test_loader))))
+        score_list.append('{} {}\n'.format(sum_score/10, sum_label/10))
         with open(args.result_test_path, 'w') as file:
             file.writelines(score_list)
+    ################  evaluate by video  ############### 
+    evaluate_by_video(epoch, args.out, args.result_val_path, args.result_test_path)
+    return 
+
+
+def evaluate_by_video(epoch, out, result_val_path, result_test_path):
+    with open(out, 'a') as fw:
+        val_threshold, test_threshold, val_ACC, val_ACER, test_ACC, test_APCER, test_BPCER, test_ACER, test_ACER_test_threshold = performances(result_val_path, result_test_path)
+            
+        print('epoch:%d, Val:  val_threshold= %.4f, val_ACC= %.4f, val_ACER= %.4f' % (epoch, val_threshold, val_ACC, val_ACER))
+        fw.write('\nepoch:%d, Val:  val_threshold= %.4f, val_ACC= %.4f, val_ACER= %.4f \n' % (epoch, val_threshold, val_ACC, val_ACER))
+        
+        print('epoch:%d, Test:  ACC= %.4f, APCER= %.4f, BPCER= %.4f, ACER= %.4f' % (epoch, test_ACC, test_APCER, test_BPCER, test_ACER))
+        fw.write('epoch:%d, Test:  ACC= %.4f, APCER= %.4f, BPCER= %.4f, ACER= %.4f \n' % (epoch, test_ACC, test_APCER, test_BPCER, test_ACER))
+    return 
+
 
 
 
@@ -138,7 +186,7 @@ def build_dataloader(args):
     return loader, sampler
 
 
-class Dataset(data.Dataset):
+class Dataset(torch.utils.data.Dataset):
     def __init__(self, ann_file, img_root_dir, transform=None, input_size=224, crop_scale=1.5):
         self.ann_file = ann_file
         self.img_root_dir = img_root_dir 
@@ -214,4 +262,7 @@ def get_img_crop(img_path, bbox, scale):
 
 
 if __name__ == '__main__':
-    main()
+
+    main(args)
+
+    # evaluate_by_video(epoch, args.out, args.result_val_path, args.result_test_path)

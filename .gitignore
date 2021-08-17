@@ -3,6 +3,7 @@ checkpoint
 checkpoint*
 logs
 logs*
+result
 
 __pycache__/
 models/__pycache__/

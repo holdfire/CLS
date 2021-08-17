@@ -172,10 +172,10 @@ def validate(args, val_loader, model, criterion, scheduler, saver, epoch, total_
         # revised saving strategy
         save_state = {
             'epoch': epoch,
-            'arch': type(model).__name__.lower(),
+            # 'arch': type(model).__name__.lower(),
             'state_dict': model.state_dict(),
-            'optimizer': saver.optimizer.state_dict(),
-            'version': 2,  # version < 2 increments epoch before save
+            # 'optimizer': saver.optimizer.state_dict(),
+            # 'version': 2,  # version < 2 increments epoch before save
         }
         filename = '-'.join([saver.save_prefix, str(epoch)]) + saver.extension
         save_path = os.path.join(saver.checkpoint_dir, filename)

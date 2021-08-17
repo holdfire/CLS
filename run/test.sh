@@ -1,2 +1,2 @@
-export CUDA_VISIBLE_DEVICES=6
-python3 ./tools/test.py
+export CUDA_VISIBLE_DEVICES=9
+python3 ./test.py
