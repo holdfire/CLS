@@ -1,7 +1,7 @@
 # Classification
 This repository is an implementation of basic image classification framework.
 
-## Environment
+### Environment
 + OS version: Ubuntu 18.04
 + NVIDIA diver version: 465.27
 + Cuda version: 11.3
@@ -10,9 +10,14 @@ This repository is an implementation of basic image classification framework.
 + Python packages installation:   
   `pip3 install -i https://mirrors.aliyun.com/pypi/simple  -r requirements.txt`
  
+### Train
+`sh run/train_example.sh`
+
+### Test
+‘sh run/test.sh’
  
 
-## Reference:
+### Reference:
 #### Code:
 + pytroch-imageNet: https://github.com/pytorch/examples/blob/master/imagenet/main.py
 + pytorch-image-models: https://github.com/rwightman/pytorch-image-models
@@ -27,7 +32,7 @@ This repository is an implementation of basic image classification framework.
 + Swin: http://arxiv.org/abs/2103.14030
 + CaiT: https://arxiv.org/abs/2103.17239
 
-## Change log:
+##3 Change log:
 **20210524**: change the order of input image channel from BGR to RGB, to better adapt to pretrained model in ImageNet.
 + dataloader.py：修改了图片加载顺序BGR->RGB
 + test.py：修改了图片加载顺序BGR->RGB
