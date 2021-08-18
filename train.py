@@ -8,7 +8,7 @@ import os
 import time
 import pprint
 import builtins
-from termcolor import cprint
+# from termcolor import cprint
 import warnings
 import tensorboard
 from loguru import logger
@@ -45,11 +45,13 @@ def main(args):
     logger.add(train_log)
     args.logger = logger
 
-    if args.gpu != 0:
-        def print_pass(*args):
-            pass
-        builtins.print = print_pass
-
+    ##################### When debuging, annoting this ###################
+    # if args.gpu != 0:
+    #     def print_pass(*args):
+    #         pass
+    #     builtins.print = print_pass
+    #######################################################################
+    
     # set random seed
     if args.seed is not None:
         random.seed(args.seed)
@@ -189,8 +191,8 @@ def validate(args, val_loader, model, criterion, scheduler, saver, epoch, total_
             args.logger.info('val_{}: {:.4f}'.format(k, v * 100))
 
         cur_lr = [group['lr'] for group in scheduler.optimizer.param_groups][0]
-        info = 'VAL_INFO EPOCH {}:\n\tACER: {:.4f} APCER: {:.4f} BPCER: {:.4f} AUC: {:.4f} ACC: {:.4f} Loss: {:.4f} lr: {:.5f}'.format(
-            epoch, metrics.ACER, metrics.APCER, metrics.BPCER, metrics.AUC, metrics.ACC, loss_m.avg, cur_lr
+        info = 'VAL_INFO EPOCH {}:\n\tTPR: {:.4f} FPR: {:.4f} AUC: {:.4f} ACC: {:.4f} Loss: {:.4f} lr: {:.5f}'.format(
+            epoch, metrics.TPR, metrics.FPR, metrics.AUC, metrics.ACC, loss_m.avg, cur_lr
         )
         args.logger.info(info)
         # args.logger.info('best_epoch: {} best_val_ACER: {:.4f}'.format(best_epoch, best_metric * 100))
@@ -198,7 +200,7 @@ def validate(args, val_loader, model, criterion, scheduler, saver, epoch, total_
 
 
 if __name__ == '__main__':
-    cprint('WARN => torch version : {}, torchvision version : {}'.format(torch.__version__, torchvision.__version__), color='yellow')
+    # cprint('WARN => torch version : {}, torchvision version : {}'.format(torch.__version__, torchvision.__version__), color='yellow')
     args = parser.parse_args()
     pprint.pprint(vars(args))
     if not os.path.exists(args.pth_save_dir):
