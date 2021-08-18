@@ -45,11 +45,11 @@ def main(args):
     logger.add(train_log)
     args.logger = logger
 
-    ##################### When debuging, annoting this ###################
-    # if args.gpu != 0:
-    #     def print_pass(*args):
-    #         pass
-    #     builtins.print = print_pass
+    ##################### When debuging, annotate this ###################
+    if args.gpu != 0:
+        def print_pass(*args):
+            pass
+        builtins.print = print_pass
     #######################################################################
     
     # set random seed
