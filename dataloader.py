@@ -7,7 +7,7 @@ import random
 import cv2
 import argparse
 from tqdm import tqdm
-from termcolor import cprint
+# from termcolor import cprint
 from tqdm import tqdm
 
 import torch
@@ -19,6 +19,7 @@ from albumentations.pytorch.transforms import ToTensorV2
 
 # train set transform
 train_transform = alb.Compose([
+    alb.Resize(448, 448),
     alb.Rotate(limit=30),
     alb.Cutout(1, 25, 25, p=0.1),
     alb.RandomResizedCrop(256, 256, scale=(0.5, 1.0), p=0.5),
@@ -94,7 +95,7 @@ class Dataset(data.Dataset):
 
         self.image_list = []
         self.label_list = []
-        self.bbox_list = []
+        # self.bbox_list = []
         with open(self.ann_file, 'r') as f:
             self.lines = f.readlines()
 
@@ -103,20 +104,21 @@ class Dataset(data.Dataset):
                 self.lines = self.__balance_class__()
 
             for line in tqdm(self.lines):
-                splits = line.strip().split()
-                if len(line.strip()) == 0 or len(splits) != 6:
-                    continue
+                splits = line.strip().split(" ")
+
+                ################### Attention: different for input list #################
+                assert len(splits) in [0, 2, 6]
                 
                 image_full_name = os.path.join(self.img_root_dir, splits[0])
                 label = splits[1]
-                bbox = splits[2:6]
-                bbox = [int(x) for x in bbox]
+                # bbox = splits[2:6]
+                # bbox = [int(x) for x in bbox]
 
                 self.image_list.append(image_full_name)
                 self.label_list.append(int(label))
-                self.bbox_list.append(bbox)
+                # self.bbox_list.append(bbox)
         self.n_images = len(self.image_list)
-        cprint('Build Train Dataset => in dataloader.py: finally get %d images'%(self.n_images), 'green')
+        print('Build Train Dataset => in dataloader.py: finally get %d images'%(self.n_images), 'green')
 
 
     def __balance_class__(self, rand_seed=2021):
@@ -129,7 +131,7 @@ class Dataset(data.Dataset):
                 fakes.append(x)
             else:
                 reals.append(x)
-        cprint('Build Train Dataset => in dataloader.py: original fakes: %d and real: %d '%(len(fakes), len(reals)), 'green')
+        print('Build Train Dataset => in dataloader.py: original fakes: %d and real: %d '%(len(fakes), len(reals)), 'green')
         np.random.seed(rand_seed)
         if len(fakes) >= len(reals):
             reals.extend(np.random.permutation(reals)[:len(fakes) - len(reals)])
@@ -144,9 +146,9 @@ class Dataset(data.Dataset):
     def __getitem__(self, index):
         img_path = self.image_list[index]
         label = self.label_list[index]
-        bbox = self.bbox_list[index]
 
-        cropped_img = get_img_crop(img_path, bbox, self.crop_scale)
+        cropped_img = cv2.imread(img_path)
+        cropped_img = cv2.cvtColor(cropped_img, cv2.COLOR_BGR2RGB)
 
         if cropped_img is None or cropped_img.shape[0] * cropped_img.shape[1] == 0:
             face = torch.zeros(3, self.input_size, self.input_size)
@@ -190,8 +192,10 @@ if __name__ == "__main__":
 
     # test code
     parser = argparse.ArgumentParser()
-    parser.add_argument('--train_list', default='/home/data4/OULU/list/train_list.txt',help='train list demo')
+    parser.add_argument('--train_file_path', default='/home/projects/cls-ly/data/train_list/train_20210817.txt', help='train list demo')
+    parser.add_argument('--img-root-dir', default='/home/data2/ly_xiaci/') 
     parser.add_argument('--input_size', default=224, type=int, help='model input size')
+    parser.add_argument('--mode', default="train", type=str)
     parser.add_argument('--crop_scale', default=2.5, type=float,help='crop scale to crop a face from raw image')
     parser.add_argument('--batch-size', default=16, type=int, metavar='N', help='mini-batch size (default: 256)')
     parser.add_argument('--workers', default=4, type=int, metavar='N', help='number of data loading workers (default: 16)')
@@ -199,6 +203,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     loader, sampler= build_dataloader(args)
+    print(len(loader))
     for i, (face, label) in enumerate(loader):
         print(face.shape)
         print(type(face))
